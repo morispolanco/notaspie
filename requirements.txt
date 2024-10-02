@@ -1,4 +1,2 @@
 streamlit 
-docx2python 
-requests
-streamlit-quill
+language_tool_python
