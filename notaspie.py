@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import re
 
 # Configuración de la página
 st.set_page_config(
@@ -38,14 +39,39 @@ user_text = st.text_area(
     placeholder="Escribe o pega tu texto con notas a pie de página aquí..."
 )
 
+# Función para extraer y separar las notas a pie de página del texto principal
+def separar_footnotes(texto):
+    """
+    Separa las definiciones de notas a pie de página del texto principal.
+    Retorna el texto sin las definiciones de footnotes y una lista con las definiciones extraídas.
+    """
+    # Expresión regular para encontrar definiciones de footnotes en Markdown
+    pattern = re.compile(r'(\[\^[^\]]+\]:.*(?:\n(?!\[\^[^\]]+\]:).*)*)', re.MULTILINE)
+    footnotes = pattern.findall(texto)
+    # Eliminar las definiciones de footnotes del texto principal
+    texto_sin_footnotes = pattern.sub('', texto).strip()
+    return texto_sin_footnotes, footnotes
+
+# Función para reintegrar las definiciones de footnotes al texto
+def reintegrar_footnotes(texto_principal, footnotes):
+    """
+    Reintegra las definiciones de footnotes al texto principal.
+    """
+    texto_corregido = texto_principal.strip()
+    if footnotes:
+        texto_corregido += "\n\n" + "\n\n".join(footnotes)
+    return texto_corregido
+
 # Función para corregir el texto utilizando la API de LanguageTool
 def corregir_texto(texto, idioma):
+    # Separar footnotes del texto principal
+    texto_principal, footnotes = separar_footnotes(texto)
+    
     url = "https://api.languagetool.org/v2/check"
     data = {
-        'text': texto,
+        'text': texto_principal,
         'language': idioma,
         'enabledOnly': False,
-        'ignoreTypes': 'TYPO'  # Opcional: Ignora ciertos tipos de errores si lo deseas
     }
     try:
         response = requests.post(url, data=data)
@@ -54,33 +80,20 @@ def corregir_texto(texto, idioma):
         matches = result.get('matches', [])
 
         # Aplicar las correcciones en orden inverso para no afectar los índices
-        corrected_text = texto
+        corrected_text = texto_principal
         for match in sorted(matches, key=lambda x: x['offset'], reverse=True):
             if match['replacements']:
                 replacement = match['replacements'][0]['value']
                 start = match['offset']
                 end = match['offset'] + match['length']
-                # Evitar reemplazar dentro de una nota a pie de página
-                if not es_dentro_de_footnote(start, texto):
-                    corrected_text = corrected_text[:start] + replacement + corrected_text[end:]
-        return corrected_text
+                corrected_text = corrected_text[:start] + replacement + corrected_text[end:]
+        
+        # Reintegrar las footnotes
+        texto_corregido = reintegrar_footnotes(corrected_text, footnotes)
+        return texto_corregido
     except requests.exceptions.RequestException as e:
         st.error(f"Ocurrió un error al conectar con la API de LanguageTool: {e}")
         return texto
-
-def es_dentro_de_footnote(pos, texto):
-    """
-    Verifica si una posición dada en el texto está dentro de una nota a pie de página.
-    Asume que las notas a pie de página están en formato Markdown: [^1], [^2], etc.
-    """
-    # Encontrar todas las posiciones de inicio y fin de las notas a pie de página
-    import re
-    footnote_definitions = list(re.finditer(r'\[\^[^\]]+\]', texto))
-    for match in footnote_definitions:
-        start, end = match.span()
-        if start <= pos < end:
-            return True
-    return False
 
 # Botón para corregir el texto
 if st.button("Corregir Texto"):
