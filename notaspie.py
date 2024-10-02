@@ -4,6 +4,7 @@ import re
 import requests
 import json
 import os
+from streamlit_quill import st_quill
 
 # Función para convertir números a superíndice Unicode
 def to_superscript(number):
@@ -23,19 +24,19 @@ def to_superscript(number):
 
 # Configuración de la página
 st.set_page_config(
-    page_title="Convertidor de DOCX a HTML con Notas a Pie de Página",
+    page_title="Editor de DOCX a HTML con Notas a Pie de Página",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # Título de la aplicación
-st.title("Convertidor de DOCX a HTML con Notas a Pie de Página")
+st.title("Editor de DOCX a HTML con Notas a Pie de Página")
 
 # Instrucciones
 st.markdown("""
 Esta aplicación permite subir un archivo `.docx` con notas a pie de página y lo convierte en HTML.
 Las referencias a las notas se mostrarán en superíndice y las notas se listarán al final del documento.
-Además, se realiza una solicitud a la API de Together.
+Además, se realiza una solicitud a la API de Together para procesar el contenido.
 """)
 
 # Subir archivo DOCX
@@ -93,24 +94,16 @@ if uploaded_file is not None:
         
         def replace_footnote(match):
             number = match.group(1)
-            # Usar etiquetas <sup> para superíndice en HTML
-            return f'<sup>[{number}]</sup>'
-        
-        processed_text_html = footnote_pattern.sub(replace_footnote, main_text)
-        
-        # Para el texto que se enviará a la API (texto plano), usar superíndice Unicode
-        def replace_footnote_unicode(match):
-            number = match.group(1)
             superscript = to_superscript(number)
-            return f'[{superscript}]'
+            return f'<sup>[{superscript}]</sup>'
         
-        processed_text_plain = footnote_pattern.sub(replace_footnote_unicode, main_text)
+        processed_text = footnote_pattern.sub(replace_footnote, main_text)
         
         # Crear el HTML
         html_content = "<html><body>\n"
         
         # Convertir saltos de línea a párrafos HTML
-        paragraphs = processed_text_html.split('\n')
+        paragraphs = processed_text.split('\n')
         for para in paragraphs:
             para = para.strip()
             if para != "":
@@ -134,9 +127,9 @@ if uploaded_file is not None:
 
     st.success("Archivo procesado exitosamente!")
     
-    # Mostrar el HTML generado
-    st.subheader("Vista Previa del HTML")
-    st.components.v1.html(html_content, height=600, scrolling=True)
+    # Mostrar el HTML generado en un editor Quill
+    st.subheader("Contenido HTML Generado")
+    st_quill(html_content, readonly=True, height=400)
     
     # Botón para enviar a la API de Together
     if st.button("Enviar a la API de Together"):
@@ -182,7 +175,7 @@ if uploaded_file is not None:
                 if "choices" in data and len(data["choices"]) > 0:
                     generated_text = data["choices"][0]["message"]["content"]
                     st.subheader("Respuesta de la API de Together")
-                    st.text_area("Texto Generado", generated_text, height=300)
+                    st_quill(generated_text, readonly=True, height=300)
                 else:
                     st.error("Respuesta inesperada de la API.")
             except requests.exceptions.HTTPError as errh:
