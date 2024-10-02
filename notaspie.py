@@ -9,7 +9,7 @@ st.set_page_config(
 )
 
 # Título de la aplicación
-st.title("📝 Editor de Texto con Corrección Gramatical")
+st.title("📝 Editor de Texto con Corrección Gramatical")  
 
 # Descripción
 st.markdown("""
