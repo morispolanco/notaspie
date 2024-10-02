@@ -71,25 +71,23 @@ def procesar_docx(file, idioma):
         st.error(f"Error al leer el archivo .docx: {e}")
         return None
 
-    # Extraer el texto de los párrafos y las notas a pie de página
-    # Debido a las limitaciones de python-docx para manejar footnotes,
-    # se preservarán las referencias a las footnotes pero no su contenido.
-    # El contenido de las footnotes se mantendrá sin modificaciones.
-
-    # Extraer todas las footnotes
+    # Extraer todas las footnotes de manera segura
     footnotes = {}
-    for rel in document.part.rels:
-        if document.part.rels[rel].reltype == RT.FOOTNOTE:
-            footnote_part = document.part.rels[rel].target_part
-            footnote_id = rel.split("/")[-1]
-            footnote_text = ""
-            for para in footnote_part.element.findall(".//w:p", namespaces=footnote_part.element.nsmap):
-                for node in para.iter():
-                    if node.tag.endswith('t'):
-                        footnote_text += node.text
-            footnotes[footnote_id] = footnote_text
+    try:
+        for rel_id, rel in document.part.rels.items():
+            if rel.reltype == RT.FOOTNOTE:
+                footnote_part = rel.target_part
+                footnote_id = rel_id.split("/")[-1]
+                footnote_text = ""
+                for para in footnote_part.element.findall(".//w:p", namespaces=footnote_part.element.nsmap):
+                    for node in para.iter():
+                        if node.tag.endswith('t') and node.text:
+                            footnote_text += node.text
+                footnotes[footnote_id] = footnote_text
+    except Exception as e:
+        st.warning(f"No se pudieron extraer las footnotes: {e}")
 
-    # Procesar cada párrafo
+    # Procesar cada párrafo del documento principal
     for para in document.paragraphs:
         original_text = para.text
         if original_text.strip() == "":
@@ -103,9 +101,13 @@ def procesar_docx(file, idioma):
 
     # Guardar el documento corregido en un buffer
     buffer = BytesIO()
-    document.save(buffer)
-    buffer.seek(0)
-    return buffer
+    try:
+        document.save(buffer)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"Error al guardar el documento corregido: {e}")
+        return None
 
 # Área de carga de archivo
 uploaded_file = st.file_uploader(
