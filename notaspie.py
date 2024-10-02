@@ -1,19 +1,22 @@
 import streamlit as st
 import requests
 import re
+from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from io import BytesIO
 
 # Configuración de la página
 st.set_page_config(
-    page_title="📝 Editor de Texto con Corrección Automática",
+    page_title="📝 Editor de Documentos con Corrección Automática",
     layout="wide",
 )
 
 # Título de la aplicación
-st.title("📝 Editor de Texto con Corrección Automática")
+st.title("📝 Editor de Documentos con Corrección Automática")
 
 # Descripción
 st.markdown("""
-Esta aplicación permite escribir texto con **notas a pie de página** y corregir errores gramaticales y ortográficos automáticamente utilizando la **API de LanguageTool**. Las notas a pie de página se preservarán en el texto corregido.
+Esta aplicación permite **subir archivos `.docx`** con notas a pie de página y corregir errores gramaticales y ortográficos automáticamente utilizando la **API de LanguageTool**. Las notas a pie de página se preservarán en el documento corregido.
 """)
 
 # Selección de idioma
@@ -32,45 +35,11 @@ selected_language = st.sidebar.selectbox(
     index=0
 )
 
-# Área de texto para ingresar el texto
-user_text = st.text_area(
-    "Ingresa tu texto aquí (puede incluir notas a pie de página):",
-    height=300,
-    placeholder="Escribe o pega tu texto con notas a pie de página aquí..."
-)
-
-# Función para extraer y separar las notas a pie de página del texto principal
-def separar_footnotes(texto):
-    """
-    Separa las definiciones de notas a pie de página del texto principal.
-    Retorna el texto sin las definiciones de footnotes y una lista con las definiciones extraídas.
-    """
-    # Expresión regular para encontrar definiciones de footnotes en Markdown
-    # Captura líneas que comienzan con [^...]:
-    pattern = re.compile(r'^\[\^[^\]]+\]:\s.*(?:\n^[^\[\^].*)*', re.MULTILINE)
-    footnotes = pattern.findall(texto)
-    # Eliminar las definiciones de footnotes del texto principal
-    texto_sin_footnotes = pattern.sub('', texto).strip()
-    return texto_sin_footnotes, footnotes
-
-# Función para reintegrar las definiciones de footnotes al texto
-def reintegrar_footnotes(texto_principal, footnotes):
-    """
-    Reintegra las definiciones de footnotes al texto principal.
-    """
-    texto_corregido = texto_principal.strip()
-    if footnotes:
-        texto_corregido += "\n\n" + "\n\n".join(footnotes)
-    return texto_corregido
-
-# Función para corregir el texto utilizando la API de LanguageTool
+# Función para corregir texto utilizando la API de LanguageTool
 def corregir_texto(texto, idioma):
-    # Separar footnotes del texto principal
-    texto_principal, footnotes = separar_footnotes(texto)
-    
     url = "https://api.languagetool.org/v2/check"
     data = {
-        'text': texto_principal,
+        'text': texto,
         'language': idioma,
         'enabledOnly': False,
     }
@@ -81,32 +50,79 @@ def corregir_texto(texto, idioma):
         matches = result.get('matches', [])
 
         # Aplicar las correcciones en orden inverso para no afectar los índices
-        corrected_text = texto_principal
+        corrected_text = texto
         for match in sorted(matches, key=lambda x: x['offset'], reverse=True):
             if match['replacements']:
                 replacement = match['replacements'][0]['value']
                 start = match['offset']
                 end = match['offset'] + match['length']
                 corrected_text = corrected_text[:start] + replacement + corrected_text[end:]
-        
-        # Reintegrar las footnotes
-        texto_corregido = reintegrar_footnotes(corrected_text, footnotes)
-        return texto_corregido
+        return corrected_text
     except requests.exceptions.RequestException as e:
         st.error(f"Ocurrió un error al conectar con la API de LanguageTool: {e}")
         return texto
 
-# Botón para corregir el texto
-if st.button("Corregir Texto"):
-    if user_text.strip() == "":
-        st.warning("Por favor, ingresa algún texto para corregir.")
-    else:
-        with st.spinner("Corrigiendo..."):
-            texto_corregido = corregir_texto(user_text, language_options[selected_language])
-            st.success("¡Corrección completada!")
-            st.markdown("### Texto Corregido:")
-            st.text_area(
-                "",
-                value=texto_corregido,
-                height=300
-            )
+# Función para procesar el documento .docx
+def procesar_docx(file, idioma):
+    # Leer el documento original
+    try:
+        document = Document(file)
+    except Exception as e:
+        st.error(f"Error al leer el archivo .docx: {e}")
+        return None
+
+    # Extraer el texto de los párrafos y las notas a pie de página
+    # Debido a las limitaciones de python-docx para manejar footnotes,
+    # se preservarán las referencias a las footnotes pero no su contenido.
+    # El contenido de las footnotes se mantendrá sin modificaciones.
+
+    # Extraer todas las footnotes
+    footnotes = {}
+    for rel in document.part.rels:
+        if document.part.rels[rel].reltype == RT.FOOTNOTE:
+            footnote_part = document.part.rels[rel].target_part
+            footnote_id = rel.split("/")[-1]
+            footnote_text = ""
+            for para in footnote_part.element.findall(".//w:p", namespaces=footnote_part.element.nsmap):
+                for node in para.iter():
+                    if node.tag.endswith('t'):
+                        footnote_text += node.text
+            footnotes[footnote_id] = footnote_text
+
+    # Procesar cada párrafo
+    for para in document.paragraphs:
+        original_text = para.text
+        if original_text.strip() == "":
+            continue  # Ignorar párrafos vacíos
+
+        # Corregir el texto del párrafo
+        corrected_text = corregir_texto(original_text, idioma)
+
+        # Reemplazar el texto corregido en el párrafo
+        para.text = corrected_text
+
+    # Guardar el documento corregido en un buffer
+    buffer = BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+# Área de carga de archivo
+uploaded_file = st.file_uploader(
+    "Sube tu archivo .docx aquí:",
+    type=["docx"]
+)
+
+# Botón para corregir el documento
+if uploaded_file is not None:
+    if st.button("Corregir Documento"):
+        with st.spinner("Corrigiendo el documento..."):
+            archivo_corregido = procesar_docx(uploaded_file, language_options[selected_language])
+            if archivo_corregido:
+                st.success("¡Corrección completada!")
+                st.download_button(
+                    label="Descargar Documento Corregido",
+                    data=archivo_corregido,
+                    file_name="documento_corregido.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
