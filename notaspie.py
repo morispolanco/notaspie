@@ -46,7 +46,8 @@ def separar_footnotes(texto):
     Retorna el texto sin las definiciones de footnotes y una lista con las definiciones extraídas.
     """
     # Expresión regular para encontrar definiciones de footnotes en Markdown
-    pattern = re.compile(r'(\[\^[^\]]+\]:.*(?:\n(?!\[\^[^\]]+\]:).*)*)', re.MULTILINE)
+    # Captura líneas que comienzan con [^...]:
+    pattern = re.compile(r'^\[\^[^\]]+\]:\s.*(?:\n^[^\[\^].*)*', re.MULTILINE)
     footnotes = pattern.findall(texto)
     # Eliminar las definiciones de footnotes del texto principal
     texto_sin_footnotes = pattern.sub('', texto).strip()
