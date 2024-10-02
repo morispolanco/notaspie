@@ -69,23 +69,30 @@ def separar_footnotes(document):
     Retorna el texto sin las definiciones de footnotes y una lista con las definiciones extraídas.
     """
     footnotes = {}
-    # Extraer footnotes
+    # Extraer footnotes de manera segura
     for rel_id, rel in document.part.rels.items():
-        if rel.reltype == RT.FOOTNOTE:
-            footnote_part = rel.target_part
-            footnote_id = rel_id.split("/")[-1]
-            footnote_text = ""
-            for para in footnote_part.element.findall(".//w:p", namespaces=footnote_part.element.nsmap):
-                for node in para.iter():
-                    if node.tag.endswith('t') and node.text:
-                        footnote_text += node.text + " "
-            footnotes[footnote_id] = footnote_text.strip()
-    
+        try:
+            if rel.reltype == RT.FOOTNOTE:
+                footnote_part = rel.target_part
+                footnote_id = rel_id.split("/")[-1]
+                footnote_text = ""
+                for para in footnote_part.element.findall(".//w:p", namespaces=footnote_part.element.nsmap):
+                    for node in para.iter():
+                        if node.tag.endswith('t') and node.text:
+                            footnote_text += node.text + " "
+                footnotes[footnote_id] = footnote_text.strip()
+        except AttributeError:
+            # Relación sin reltype o tipo diferente, se ignora
+            continue
+        except Exception as e:
+            st.warning(f"No se pudo procesar la footnote con ID {rel_id}: {e}")
+            continue
+
     # Extraer el texto principal con referencias a footnotes
     texto_principal = ""
     for para in document.paragraphs:
         texto_principal += para.text + "\n"
-    
+
     return texto_principal.strip(), footnotes
 
 # Función para aplicar las correcciones al documento
