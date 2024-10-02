@@ -1,3 +1,4 @@
 streamlit 
 docx2python 
 requests
+streamlit-quill
