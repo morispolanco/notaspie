@@ -5,6 +5,22 @@ import requests
 import json
 import os
 
+# Función para convertir números a superíndice Unicode
+def to_superscript(number):
+    superscript_map = {
+        '0': '⁰',
+        '1': '¹',
+        '2': '²',
+        '3': '³',
+        '4': '⁴',
+        '5': '⁵',
+        '6': '⁶',
+        '7': '⁷',
+        '8': '⁸',
+        '9': '⁹'
+    }
+    return ''.join(superscript_map.get(digit, digit) for digit in str(number))
+
 # Configuración de la página
 st.set_page_config(
     page_title="Convertidor de DOCX a HTML con Notas a Pie de Página",
@@ -18,7 +34,7 @@ st.title("Convertidor de DOCX a HTML con Notas a Pie de Página")
 # Instrucciones
 st.markdown("""
 Esta aplicación permite subir un archivo `.docx` con notas a pie de página y lo convierte en HTML.
-Las referencias a las notas se mostrarán entre corchetes y las notas se listarán al final del documento.
+Las referencias a las notas se mostrarán en superíndice y las notas se listarán al final del documento.
 Además, se realiza una solicitud a la API de Together.
 """)
 
@@ -77,15 +93,24 @@ if uploaded_file is not None:
         
         def replace_footnote(match):
             number = match.group(1)
-            return f'[{number}]'
+            # Usar etiquetas <sup> para superíndice en HTML
+            return f'<sup>[{number}]</sup>'
         
-        processed_text = footnote_pattern.sub(replace_footnote, main_text)
+        processed_text_html = footnote_pattern.sub(replace_footnote, main_text)
+        
+        # Para el texto que se enviará a la API (texto plano), usar superíndice Unicode
+        def replace_footnote_unicode(match):
+            number = match.group(1)
+            superscript = to_superscript(number)
+            return f'[{superscript}]'
+        
+        processed_text_plain = footnote_pattern.sub(replace_footnote_unicode, main_text)
         
         # Crear el HTML
         html_content = "<html><body>\n"
         
         # Convertir saltos de línea a párrafos HTML
-        paragraphs = processed_text.split('\n')
+        paragraphs = processed_text_html.split('\n')
         for para in paragraphs:
             para = para.strip()
             if para != "":
@@ -106,7 +131,7 @@ if uploaded_file is not None:
             os.rmdir(temp_dir)
         except Exception:
             pass  # Ignorar si no se puede eliminar
-        
+
     st.success("Archivo procesado exitosamente!")
     
     # Mostrar el HTML generado
